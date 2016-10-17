@@ -30,27 +30,21 @@ class TempFixer extends CI_Controller {
 
         define("ALLOWED_ERROR", $allowed_error);
 
-//        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv", "Kelowna Airport", "49.02999878", "-119.4649963");
-//        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv");
+        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv");
 
     }
 
 
     public function index() {
 
-        // todo: move it here with params
-        // $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv", "Kelowna Airport", "49.02999878", "-119.4649963");
+        $this->scanData(365, '2010-01-01');
 
-        $this->scanData("./TempData/kelowna2010_input.tsv", 3, '2010-02-21');
-
-//        var_dump($this->outputTable['2010-12-31']);
         var_dump($this->outputTable);
 //        echo JSON_encode($this->outputTable);
 
     }
 
     /**
-     * // todo: check temp if F or C or both
      * Creates an array containing the data from the specified file, stored in $this->inputTable
      * @param $fileLocation - string: path to file
      * @return array - Example: [
@@ -60,13 +54,12 @@ class TempFixer extends CI_Controller {
      *                    'year' => '2010'
      *                    '2010-01-01' => [
      *                        '00' => [
-     *                            'tempf' => 'Penticton Airport'
      *                            'tempc' => 'Penticton Airport'
-     *                            'dwpt' => '-1.700000048'
-     *                            'rh' => '86'
-     *                            'wdir' => '18'
-     *                            'wspd' => '24'
-     *                            'stnpresskpa' => '97.41000366'
+//     *                            'dwpt' => '-1.700000048'
+//     *                            'rh' => '86'
+//     *                            'wdir' => '18'
+//     *                            'wspd' => '24'
+//     *                            'stnpresskpa' => '97.41000366'
      *                        ],
      *                        '01' => [ ... ],
      *                         ...,
@@ -141,22 +134,22 @@ class TempFixer extends CI_Controller {
             $datarow = [
                 'tempc' => (position('tempc', $fileLines) < count($line))
                     ? $line[position('tempc', $fileLines)]
-                    : null,
-                'dwpt' => (position('dwpt', $fileLines) < count($line))
-                    ? $line[position('dwpt', $fileLines)]
-                    : null,
-                'rh' => (position('rh', $fileLines) < count($line))
-                    ? $line[position('rh', $fileLines)]
-                    : null,
-                'wdir' => (position('wdir', $fileLines) < count($line))
-                    ? $line[position('wdir', $fileLines)]
-                    : null,
-                'wspd' => (position('wspd', $fileLines) < count($line))
-                    ? $line[position('wspd', $fileLines)]
-                    : null,
-                'stnpresskpa' => (position('stnpresskpa', $fileLines) < count($line))
-                    ? $line[position('stnpresskpa', $fileLines)]
-                    : null
+                    : null //,
+//                'dwpt' => (position('dwpt', $fileLines) < count($line))
+//                    ? $line[position('dwpt', $fileLines)]
+//                    : null,
+//                'rh' => (position('rh', $fileLines) < count($line))
+//                    ? $line[position('rh', $fileLines)]
+//                    : null,
+//                'wdir' => (position('wdir', $fileLines) < count($line))
+//                    ? $line[position('wdir', $fileLines)]
+//                    : null,
+//                'wspd' => (position('wspd', $fileLines) < count($line))
+//                    ? $line[position('wspd', $fileLines)]
+//                    : null,
+//                'stnpresskpa' => (position('stnpresskpa', $fileLines) < count($line))
+//                    ? $line[position('stnpresskpa', $fileLines)]
+//                    : null
             ];
             // load data to time row
             $inputTempTable[$date][$time] = $datarow;
@@ -170,21 +163,21 @@ class TempFixer extends CI_Controller {
 
     /**
      * Creates an array containing the final output, stored into $this->outputTable
-     * todo: move ERRORS_COUNT_TODAY up to day's data
      * @return array - Example: [
      *                    'station' => 'Penticton Airport'
      *                    'latitude' => '49.47000122'
      *                    'longitude' => '-119.6050034'
      *                    'year' => '2010'
      *                    '2010-01-01' => [
+     *                        'ERRORS_COUNT_TODAY' => 7,
      *                        '00' => [
-     *                            'tempf' => 'Penticton Airport'
-     *                            'tempc' => 'Penticton Airport'
-     *                            'dwpt' => '-1.700000048'
-     *                            'rh' => '86'
-     *                            'wdir' => '18'
-     *                            'wspd' => '24'
-     *                            'stnpresskpa' => '97.41000366'
+     *                            'tempf' => '37.4'
+     *                            'tempc' => '3'
+//     *                            'dwpt' => '-1.700000048'
+//     *                            'rh' => '86'
+//     *                            'wdir' => '18'
+//     *                            'wspd' => '24'
+//     *                            'stnpresskpa' => '97.41000366'
      *                            'ERRORS_COUNT_TODAY' => null
      *                            'MISSING_DATA' => null
      *                            'TOO_HOT' => null
@@ -208,14 +201,10 @@ class TempFixer extends CI_Controller {
      *                    '2010-12-31' => [ ... ]
      *                 ];
      */
-    public function scanData($fileLocation, $numDays = 365, $startDate) {
-
-        if (empty($this->inputTable)) {
-            $this->inputTable = $this->getInputTable($fileLocation, $startDate);
-        }
+    public function scanData($numDays, $startDate) {
 
         $year = date('Y', strtotime($startDate));
-        $startDay = date('z', strtotime($startDate)) + 1;
+        $startDay = (int) date('z', strtotime($startDate));
 
         $inputTable = $this->inputTable;
 
@@ -227,7 +216,7 @@ class TempFixer extends CI_Controller {
         ];
 
 
-        for ($d = $startDay; $d <= $startDay + $numDays; $d++) {
+        for ($d = $startDay; $d < $startDay + $numDays; $d++) {
 
             $date = $this->dayofyear2date($d, $year); // 3 --> 2010-01-03
 
@@ -239,21 +228,19 @@ class TempFixer extends CI_Controller {
                     $time = (strlen($h) == 2) ? $h : '0'.$h; // double digit time
                     $outputTable[$date][$time] = $this->missingHourlyData();
                 }
-                continue;
+            } else {
+                $dailyData = [];
+                for ($h = 0; $h < 24; $h++) {
+                    $time = (strlen($h) == 2) ? $h : '0' . $h; // double digit time
+                    $dailyData[$time] = $this->checkHourlyData($d, $time, $date);
+                }
+                $outputTable[$date] = $dailyData;
             }
-
-            $dailyData = [];
-            for ($h = 0; $h < 24; $h++) {
-                $time = (strlen($h) == 2) ? $h : '0' . $h; // double digit time
-                $dailyData[$time] = $this->checkHourlyData($d, $time, $date);
-            }
-            $outputTable[$date] = $dailyData;
         }
         $this->outputTable = $outputTable;
 
 
-        //$this->completeErrorChecks($numDays, $startDate);
-        for ($d = $startDay; $d <= $startDay + $numDays; $d++) {
+        for ($d = $startDay; $d < $startDay + $numDays; $d++) {
 
             $date = $this->dayofyear2date($d, $year);
 
@@ -290,12 +277,12 @@ class TempFixer extends CI_Controller {
             $tempc = $inputTable[$date][$time]['tempc'];
 
             $datarow = [
-                    'tempc' => $tempc,
-                    'dwpt' => $inputTable[$date][$time]['dwpt'],
-                    'rh' => $inputTable[$date][$time]['rh'],
-                    'wdir' => $inputTable[$date][$time]['wdir'],
-                    'wspd' => $inputTable[$date][$time]['wspd'],
-                    'stnpresskpa' => $inputTable[$date][$time]['stnpresskpa']
+                    'tempc' => $tempc //,
+//                    'dwpt' => $inputTable[$date][$time]['dwpt'],
+//                    'rh' => $inputTable[$date][$time]['rh'],
+//                    'wdir' => $inputTable[$date][$time]['wdir'],
+//                    'wspd' => $inputTable[$date][$time]['wspd'],
+//                    'stnpresskpa' => $inputTable[$date][$time]['stnpresskpa']
                 ] + $this->noErrors();
 
             if (!is_null($tempc)) {
@@ -343,46 +330,9 @@ class TempFixer extends CI_Controller {
     }
 
 
-    /**
-     * todo: modify doc here
-     * Set Del-1, Del+1, Del+2, Del+3 into $this->outputTable,
-     * i.e. absolute temperature variation from previous hour or next 1, 2, 3, or 4 hours
-     */
-    private function completeErrorChecks() {
-
-
-        for ($d = 1; $d < 366; $d++) {
-
-            $date = $this->dayofyear2date($d, 2010);
-
-            $errorCount = 0;
-            for ($h = 0; $h < 24; $h++) {
-                $time = (strlen($h) == 2) ? $h : '0' . $h; // always double digit
-
-                /* ****************
-                 * set deltas
-                 * ****************/
-                $this->setDelta('-1', $date, $time);
-                $this->setDelta('+1', $date, $time);
-                $this->setDelta('+2', $date, $time);
-                $this->setDelta('+3', $date, $time);
-//                $this->setDelta('+4', $date, $time); // todo: check if this is actually used
-
-                $this->checkRelativeErrors($d, $h, $date, $time);
-
-                $errorCount = $errorCount + $this->countErrors($date, $time);
-            }
-
-            $this->outputTable[$date]["ERRORS_COUNT_TODAY"] = $errorCount;
-        }
-
-    }
-
 
 
     private function checkRelativeErrors($d, $h, $date, $time) {
-
-
 
         $currentRowData = $this->outputTable[$date][$time];
         if (!is_null($currentRowData['Del+1']) && !is_null($currentRowData['Del+2']) &&
@@ -500,18 +450,22 @@ class TempFixer extends CI_Controller {
         $diffD = date('Y-m-d', strtotime($dateTime . " " . $diff . "hour"));
 
         $this->outputTable[$date][$time]['Del' . $diff] = null;
-        // if differential previous/next temp data is available set Delta
-        if (isset($this->outputTable[$diffD][$diffT]['tempc']) && isset($this->outputTable[$date][$time]['tempc'])) {
-            $diffDataRow = $this->outputTable[$diffD][$diffT];
+        // if differential previous/next temp data is available (in the input data set), define Delta
+        if (isset($this->inputTable[$diffD][$diffT]['tempc']) && isset($this->inputTable[$date][$time]['tempc'])) {
+            $diffDataRow = $this->inputTable[$diffD][$diffT];
+            $diffDataRow['tempf'] = $diffDataRow['tempc'] * 1.8 + 32;
             $this->outputTable[$date][$time]['Del' . $diff] = abs($this->outputTable[$date][$time]['tempf'] - $diffDataRow['tempf']);
         }
 
     }
 
 
+
     #####################################
     # UTILITY FUNCTIONS
     #####################################
+
+
     /**
      * returns a date string correspondent to the day of the (optional year:
      * @param $day - int between 1 and 365
@@ -528,7 +482,7 @@ class TempFixer extends CI_Controller {
             return false;
         }
 
-        $offset = intval(intval($day) * 24 * 60 * 60) - 1; // adjust 0 counting
+        $offset = intval(intval($day) * 24 * 60 * 60); // adjust 0 counting
         $year = (!is_null($year))
             ? $year
             : date("Y");
@@ -548,11 +502,11 @@ class TempFixer extends CI_Controller {
         return [
             'tempc' => null,
             'tempf' => null,
-            'dwpt' => null,
-            'rh' => null,
-            'wdir' => null,
-            'wspd' => null,
-            'stnpresskpa' => null,
+//            'dwpt' => null,
+//            'rh' => null,
+//            'wdir' => null,
+//            'wspd' => null,
+//            'stnpresskpa' => null,
             "MISSING_DATA" => TRUE, // flagged
             "TOO_HOT" => null,
             "TOO_COLD" => null,
