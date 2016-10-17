@@ -25,13 +25,13 @@ class TempFixer extends CI_Controller {
     private $outputTable = [];
 
 
-    public function __construct() {
+    public function __construct($allowed_error = 9.9) {
         parent::__construct();
 
-        define("ALLOWED_ERROR", 9.9);
+        define("ALLOWED_ERROR", $allowed_error);
 
 //        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv", "Kelowna Airport", "49.02999878", "-119.4649963");
-        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv");
+//        $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv");
 
     }
 
@@ -41,12 +41,11 @@ class TempFixer extends CI_Controller {
         // todo: move it here with params
         // $this->inputTable = $this->getInputTable("./TempData/kelowna2010_input.tsv", "Kelowna Airport", "49.02999878", "-119.4649963");
 
-        $this->createOutputTable();
+        $this->scanData("./TempData/kelowna2010_input.tsv", 3, '2010-02-21');
 
 //        var_dump($this->outputTable['2010-12-31']);
         var_dump($this->outputTable);
-//        $this->sanitizeData();
-//        $this->setMaxMin();
+//        echo JSON_encode($this->outputTable);
 
     }
 
@@ -77,7 +76,7 @@ class TempFixer extends CI_Controller {
      *                    '2010-12-31' => [ ... ]
      *                 ];
      */
-    public function getInputTable($fileLocation, $station = null, $lat = null, $lng = null) {
+    public function getInputTable($fileLocation, $startDate = null, $station = null, $lat = null, $lng = null) {
         $fileLines = file($fileLocation, FILE_IGNORE_NEW_LINES);
         // convert each (string) line into array
         foreach ($fileLines as &$line) {
@@ -89,13 +88,19 @@ class TempFixer extends CI_Controller {
             return array_search($name, $fileLines[0]);
         }
 
+        if (isset($startDate)) {
+            $year = date('Y', strtotime($startDate));
+        } else {
+            $year = $fileLines[1][position('year', $fileLines)];
+        }
+
         // create default array with station info
         // todo: change header reference for the correct file
         $inputTempTable = [
             'station' => ($station) ? $station : $fileLines[1][position('loc', $fileLines)],
             'latitude' => ($lat) ? $lat : $fileLines[1][position('latitude', $fileLines)],
             'longitude' => ($lng) ? $lng : $fileLines[1][position('longitude', $fileLines)],
-            'year' => $fileLines[1][position('year', $fileLines)]
+            'year' => $year
         ];
 
 //        $inputTempTable = [
@@ -194,7 +199,6 @@ class TempFixer extends CI_Controller {
      *                            'Del+1' => 0.156
      *                            'Del+2' => 0.61234
      *                            'Del+3' => 0.367
-     *                            'Del+4' => 0.43
      *                        ],
      *                        '01' => [ ... ],
      *                         ...,
@@ -204,7 +208,14 @@ class TempFixer extends CI_Controller {
      *                    '2010-12-31' => [ ... ]
      *                 ];
      */
-    public function createOutputTable() {
+    public function scanData($fileLocation, $numDays = 365, $startDate) {
+
+        if (empty($this->inputTable)) {
+            $this->inputTable = $this->getInputTable($fileLocation, $startDate);
+        }
+
+        $year = date('Y', strtotime($startDate));
+        $startDay = date('z', strtotime($startDate)) + 1;
 
         $inputTable = $this->inputTable;
 
@@ -215,45 +226,10 @@ class TempFixer extends CI_Controller {
             'year' => $inputTable['year']
         ];
 
-        // util function, returns empty line
-        function missingHourlyData() {
-            return [
-                'tempc' => null,
-                'tempf' => null,
-                'dwpt' => null,
-                'rh' => null,
-                'wdir' => null,
-                'wspd' => null,
-                'stnpresskpa' => null,
-                "MISSING_DATA" => TRUE, // flagged
-                "TOO_HOT" => null,
-                "TOO_COLD" => null,
-                "TOO_WARM_AT_NIGHT" => null,
-                "TOO_HOT_EARLY" => null,
-                "TOO_HOT_LATE" => null,
-                "NO_CHANGE" => null,
-                "TOO_SMALL_VARIATION" => null,
-                "TOO_MUCH_VARIATION" => null
-            ];
-        }
 
-        function noErrors() {
-            return [
-                "MISSING_DATA" => null,
-                "TOO_HOT" => null,
-                "TOO_COLD" => null,
-                "TOO_WARM_AT_NIGHT" => null,
-                "TOO_HOT_EARLY" => null,
-                "TOO_HOT_LATE" => null,
-                "NO_CHANGE" => null,
-                "TOO_SMALL_VARIATION" => null,
-                "TOO_MUCH_VARIATION" => null
-            ];
-        }
+        for ($d = $startDay; $d <= $startDay + $numDays; $d++) {
 
-        for ($d = 1; $d < 366; $d++) {
-
-            $date = $this->dayofyear2date($d, $outputTable['year']); // 3 --> 2010-01-03
+            $date = $this->dayofyear2date($d, $year); // 3 --> 2010-01-03
 
             $outputTable[$date] = [];
 
@@ -261,7 +237,7 @@ class TempFixer extends CI_Controller {
             if (!isset($inputTable[$date])) {
                 for ($h = 0; $h < 24; $h++) {
                     $time = (strlen($h) == 2) ? $h : '0'.$h; // double digit time
-                    $outputTable[$date][$time] = missingHourlyData();
+                    $outputTable[$date][$time] = $this->missingHourlyData();
                 }
                 continue;
             }
@@ -269,41 +245,70 @@ class TempFixer extends CI_Controller {
             $dailyData = [];
             for ($h = 0; $h < 24; $h++) {
                 $time = (strlen($h) == 2) ? $h : '0' . $h; // double digit time
-                // if hour values are missing set empty line and set MISSING_DATA error
-                if (!isset($inputTable[$date][$time])) {
-                    $datarow = missingHourlyData();
-                    $dailyData[$time] = $datarow;
-                    continue;
-                } else {
-                    $tempc = $inputTable[$date][$time]['tempc'];
-
-                    $datarow = [
-                        'tempc' => $tempc,
-                        'dwpt' => $inputTable[$date][$time]['dwpt'],
-                        'rh' => $inputTable[$date][$time]['rh'],
-                        'wdir' => $inputTable[$date][$time]['wdir'],
-                        'wspd' => $inputTable[$date][$time]['wspd'],
-                        'stnpresskpa' => $inputTable[$date][$time]['stnpresskpa']
-                    ] + noErrors();
-
-                    if ($tempc != null) {
-                        $tempf = $tempc * 1.8 + 32;
-                        $datarow['tempf'] = $tempf;
-                    } else {
-                        // if temp is missing flag missing data
-                        $datarow['tempf'] = null;
-                        $datarow['MISSING_DATA'] = TRUE;
-                    }
-
-                    $dailyData[$time] = $this->checkAbsoluteErrors($datarow, $d, $time);;
-                }
+                $dailyData[$time] = $this->checkHourlyData($d, $time, $date);
             }
             $outputTable[$date] = $dailyData;
         }
         $this->outputTable = $outputTable;
 
-        $this->completeErrorChecks();
 
+        //$this->completeErrorChecks($numDays, $startDate);
+        for ($d = $startDay; $d <= $startDay + $numDays; $d++) {
+
+            $date = $this->dayofyear2date($d, $year);
+
+            $errorCount = 0;
+            for ($h = 0; $h < 24; $h++) {
+                $time = (strlen($h) == 2) ? $h : '0' . $h; // always double digit
+
+                /* ****************
+                 * set deltas
+                 * ****************/
+                $this->setDelta('-1', $date, $time);
+                $this->setDelta('+1', $date, $time);
+                $this->setDelta('+2', $date, $time);
+                $this->setDelta('+3', $date, $time);
+
+                $this->checkRelativeErrors($d, $h, $date, $time);
+
+                $errorCount = $errorCount + $this->countErrors($date, $time);
+            }
+
+            $this->outputTable[$date]["ERRORS_COUNT_TODAY"] = $errorCount;
+        }
+
+
+    }
+
+
+    private function checkHourlyData($d, $time, $date) {
+        $inputTable = $this->inputTable;
+        // if hour values are missing set empty line and set MISSING_DATA error
+        if (!isset($inputTable[$date][$time])) {
+            return $this->missingHourlyData();
+        } else {
+            $tempc = $inputTable[$date][$time]['tempc'];
+
+            $datarow = [
+                    'tempc' => $tempc,
+                    'dwpt' => $inputTable[$date][$time]['dwpt'],
+                    'rh' => $inputTable[$date][$time]['rh'],
+                    'wdir' => $inputTable[$date][$time]['wdir'],
+                    'wspd' => $inputTable[$date][$time]['wspd'],
+                    'stnpresskpa' => $inputTable[$date][$time]['stnpresskpa']
+                ] + $this->noErrors();
+
+            if (!is_null($tempc)) {
+                $tempf = $tempc * 1.8 + 32;
+                $datarow['tempf'] = $tempf;
+            } else {
+                // if temp is missing flag missing data
+                $datarow['tempf'] = null;
+                $datarow['MISSING_DATA'] = TRUE;
+            }
+
+            return $this->checkAbsoluteErrors($datarow, $d, $time);
+        }
 
     }
 
@@ -323,7 +328,7 @@ class TempFixer extends CI_Controller {
         if ($temp > 95 && ($time > 22 || $time < 10)) {
             $datarow["TOO_WARM_AT_NIGHT"] = TRUE;
         }
-        if ($temp < 36 && (165 < $dayOfYear && $dayOfYear < 220) || // between Jun 15 and Aug 9
+        if ($temp < 36 && $this->momentBetween($dayOfYear, 165, 220) || // between Jun 15 and Aug 9
             $temp < -20 ) {
             $datarow["TOO_COLD"] = TRUE;
         }
@@ -340,20 +345,17 @@ class TempFixer extends CI_Controller {
 
     /**
      * todo: modify doc here
-     * Set Del-1, Del+1, Del+2, Del+3, Del+4 into $this->outputTable,
+     * Set Del-1, Del+1, Del+2, Del+3 into $this->outputTable,
      * i.e. absolute temperature variation from previous hour or next 1, 2, 3, or 4 hours
      */
     private function completeErrorChecks() {
 
-        // util function, checks if time or day is between limits
-        function momentBetween($moment, $bottom, $top) {
-            return ($bottom <= $moment && $moment <= $top);
-        }
 
         for ($d = 1; $d < 366; $d++) {
 
             $date = $this->dayofyear2date($d, 2010);
 
+            $errorCount = 0;
             for ($h = 0; $h < 24; $h++) {
                 $time = (strlen($h) == 2) ? $h : '0' . $h; // always double digit
 
@@ -364,120 +366,27 @@ class TempFixer extends CI_Controller {
                 $this->setDelta('+1', $date, $time);
                 $this->setDelta('+2', $date, $time);
                 $this->setDelta('+3', $date, $time);
-                $this->setDelta('+4', $date, $time); // todo: check if this is actually used
+//                $this->setDelta('+4', $date, $time); // todo: check if this is actually used
 
-
-                /* ****************
-                 * check relative errors
-                 * ****************/
                 $this->checkRelativeErrors($d, $h, $date, $time);
-//                $currentRowData = $this->outputTable[$date][$time];
-//                if ($currentRowData['Del+1'] != null && $currentRowData['Del+2'] != null &&
-//                    $currentRowData['Del+3'] != null && $currentRowData['tempf'] != null
-//                ) {
-//
-//                    if ($currentRowData['Del+1'] == 0 &&
-//                        $currentRowData['Del+2'] == 0 &&
-//                        $currentRowData['Del+3'] == 0
-//                    ) {
-//                        $this->outputTable[$date][$time]['NO_CHANGE'] = TRUE;
-//                    }
-//                    if ($currentRowData['Del+1'] < 0.3 && // too small variations
-//                        $currentRowData['Del+2'] < 1 &&
-//                        $currentRowData['Del+3'] < 1 &&
-//                        // between Apr 16 and Sep 1, from 9am to 5pm
-//                        (momentBetween($d, 105, 243) && momentBetween($h, 9, 17))
-//                    ) {
-//                        $this->outputTable[$date][$time]['TOO_SMALL_VARIATION'] = TRUE;
-//                    }
-//
-//                }
-//
-//
-//                if ($currentRowData['Del-1'] != null && $currentRowData['Del-1'] > ALLOWED_ERROR) {
-//                    $this->outputTable[$date][$time]['TOO_MUCH_VARIATION'] = TRUE;
-//                }
-//
-//                /* *********************
-//                 * now avoid marking two consecutive errors for a single spiking errors
-//                 * (delta has absolute value --> A-B = B-C)
-//                 *            B
-//                 *            .
-//                 *           / \
-//                 *          /   \
-//                 *      __./     \.___
-//                 *        A       C
-//                 * *********************/
-//
-//                $dateTime = $date . "T" . $time . ":00"; // "2010-01-01T00:00"
-//
-//                // get previous hour reference
-//                $t1 = date('G', strtotime($dateTime . " -1 hour")); // previous hour
-//                // previous/next hour might be in a different day
-//                $diffT1 = (strlen($t1) == 2) ? $t1 : '0' . $t1; // always with two characters
-//                $diffD1 = date('Y-m-d', strtotime($dateTime . " -1 hour"));
-//
-//                // get 2 hours ago reference
-//                $t2 = date('G', strtotime($dateTime . " -2 hour")); // 2 hours ago
-//                $diffT2 = (strlen($t2) == 2) ? $t2 : '0' . $t2; // two characters
-//                $diffD2 = date('Y-m-d', strtotime($dateTime . " -2 hour"));
-//
-//                if ( isset($this->outputTable[$diffD1][$diffT1]) && isset($this->outputTable[$diffD2][$diffT2])) {
-//
-//                    $prev1RowData = $this->outputTable[$diffD1][$diffT1]; // prev hour data
-//                    $prev2RowData = $this->outputTable[$diffD2][$diffT2]; // 2 hours ago data
-//                    if (//if prev hour data has TOO_MUCH_VARIATION
-//                        $prev1RowData['TOO_MUCH_VARIATION'] == TRUE &&
-//                        // but current value is actually within ALLOWED_ERROR from two hous ago
-//                        $prev2RowData['Del+2'] < ALLOWED_ERROR
-//                    ) {
-//                        // clear error for current data
-//                        $this->outputTable[$date][$time]['TOO_MUCH_VARIATION'] = null;
-//                    }
-//                }
 
-                $this->countErrors($date, $time);
-                // set number of errors today
-//                $currentRowData = $this->outputTable[$date][$time];
-//                $errorCount = 0;
-//                if ($currentRowData["TOO_HOT"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_COLD"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_WARM_AT_NIGHT"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_HOT_EARLY"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_HOT_LATE"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["NO_CHANGE"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_SMALL_VARIATION"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                if ($currentRowData["TOO_MUCH_VARIATION"] == TRUE) {
-//                    $errorCount++;
-//                }
-//                $this->outputTable[$date]["ERRORS_COUNT_TODAY"] = $errorCount;
+                $errorCount = $errorCount + $this->countErrors($date, $time);
             }
 
-            // set min max
-            $this->setMaxMin($date);
-
+            $this->outputTable[$date]["ERRORS_COUNT_TODAY"] = $errorCount;
         }
 
     }
 
+
+
     private function checkRelativeErrors($d, $h, $date, $time) {
+
+
+
         $currentRowData = $this->outputTable[$date][$time];
-        if ($currentRowData['Del+1'] != null && $currentRowData['Del+2'] != null &&
-            $currentRowData['Del+3'] != null && $currentRowData['tempf'] != null
+        if (!is_null($currentRowData['Del+1']) && !is_null($currentRowData['Del+2']) &&
+            !is_null($currentRowData['Del+3']) // && !is_null($currentRowData['tempf'])
         ) {
 
             if ($currentRowData['Del+1'] == 0 &&
@@ -486,11 +395,12 @@ class TempFixer extends CI_Controller {
             ) {
                 $this->outputTable[$date][$time]['NO_CHANGE'] = TRUE;
             }
+
             if ($currentRowData['Del+1'] < 0.3 && // too small variations
                 $currentRowData['Del+2'] < 1 &&
                 $currentRowData['Del+3'] < 1 &&
                 // between Apr 16 and Sep 1, from 9am to 5pm
-                (momentBetween($d, 105, 243) && momentBetween($h, 9, 17))
+                ($this->momentBetween($d, 105, 243) && $this->momentBetween($h, 9, 17))
             ) {
                 $this->outputTable[$date][$time]['TOO_SMALL_VARIATION'] = TRUE;
             }
@@ -498,7 +408,7 @@ class TempFixer extends CI_Controller {
         }
 
 
-        if ($currentRowData['Del-1'] != null && $currentRowData['Del-1'] > ALLOWED_ERROR) {
+        if (!is_null($currentRowData['Del-1']) && $currentRowData['Del-1'] > ALLOWED_ERROR) {
             $this->outputTable[$date][$time]['TOO_MUCH_VARIATION'] = TRUE;
         }
 
@@ -571,7 +481,8 @@ class TempFixer extends CI_Controller {
         if ($currentRowData["TOO_MUCH_VARIATION"] == TRUE) {
             $errorCount++;
         }
-        $this->outputTable[$date]["ERRORS_COUNT_TODAY"] = $errorCount;
+
+        return $errorCount;
 
     }
 
@@ -597,12 +508,6 @@ class TempFixer extends CI_Controller {
 
     }
 
-    private function setMaxMin($date) {
-
-        $min = 0;
-        $max = 0;
-
-    }
 
     #####################################
     # UTILITY FUNCTIONS
@@ -624,13 +529,55 @@ class TempFixer extends CI_Controller {
         }
 
         $offset = intval(intval($day) * 24 * 60 * 60) - 1; // adjust 0 counting
-        $year = ($year != null)
+        $year = (!is_null($year))
             ? $year
             : date("Y");
         $str = date($format, strtotime("Jan 1, " . $year) + $offset);
 
         return ($str);
 
+    }
+
+    // util function, checks if time or day is between limits
+    private function momentBetween($moment, $bottom, $top) {
+        return ($bottom <= $moment && $moment <= $top);
+    }
+
+    // util function, returns empty line
+    private function missingHourlyData() {
+        return [
+            'tempc' => null,
+            'tempf' => null,
+            'dwpt' => null,
+            'rh' => null,
+            'wdir' => null,
+            'wspd' => null,
+            'stnpresskpa' => null,
+            "MISSING_DATA" => TRUE, // flagged
+            "TOO_HOT" => null,
+            "TOO_COLD" => null,
+            "TOO_WARM_AT_NIGHT" => null,
+            "TOO_HOT_EARLY" => null,
+            "TOO_HOT_LATE" => null,
+            "NO_CHANGE" => null,
+            "TOO_SMALL_VARIATION" => null,
+            "TOO_MUCH_VARIATION" => null
+        ];
+    }
+
+    // util function, returns clean error list
+    private function noErrors() {
+        return [
+            "MISSING_DATA" => null,
+            "TOO_HOT" => null,
+            "TOO_COLD" => null,
+            "TOO_WARM_AT_NIGHT" => null,
+            "TOO_HOT_EARLY" => null,
+            "TOO_HOT_LATE" => null,
+            "NO_CHANGE" => null,
+            "TOO_SMALL_VARIATION" => null,
+            "TOO_MUCH_VARIATION" => null
+        ];
     }
 
 }
